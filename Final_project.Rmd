@@ -1,0 +1,148 @@
+---
+title: "Final project"
+author: "Group J"
+date: ""
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, eval = TRUE, comment="", warning = FALSE, message = FALSE, tidy.opts=list(width.cutoff=55), tidy = TRUE)
+```
+
+```{r packages}
+library(data.table)
+library(readxl)
+```
+
+
+```{r read_data_intro, echo=FALSE}
+dat <- read_excel("rollingsales_manhattan.xls")
+dat <- data.table(dat)
+dim(dat)
+names(dat)
+```
+```{r functions}
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+inputting_zero <- function(dat,c)
+{
+  s <- dat[,which(get(c)==0)]
+  m <- as.numeric(Mode(dat[,get(eval(c))]))
+  for (i in s)
+  {
+    dat[i,c]= m
+  }
+  return(dat)
+}
+
+inputting_NA <- function(dat,c)
+{
+  s <- dat[,which(is.na(get(c)))]
+  m <- as.numeric(Mode(dat[,get(eval(c))]))
+  for (i in s)
+  {
+    dat[i,c]= m
+  }
+  return(dat)
+}
+```
+
+
+
+```{r drop features}
+dat[,"BOROUGH" :=NULL] # Useless in our prediction
+
+dat[,"SALE DATE" :=NULL] # Useless in our prediction
+
+dat[,"EASE-MENT" :=NULL] # Almost all of them are NAs
+
+dat[,"APARTMENT NUMBER" :=NULL] # Almost all of them are Nas
+
+dat[,"ADDRESS"  :=NULL] # Only need to use zipcode instead of address
+```
+
+
+```{r Feature engineering}
+dat <-  dat[dat$`SALE PRICE`!=0] # Remove those data with 0 sale price, most of them are dulplicate data points
+
+
+dat <- dat[-dat[,which(is.na(get("ZIP CODE") ))],] # Remove NA zipcode data point
+dat <- inputting_zero(dat,'ZIP CODE') #Inputting all 0 zipcode with mode
+
+dat[which(is.na(dat[,"BUILDING CLASS AT PRESENT"])),6] <- Mode(dat[,6]) #Inputting all NAs with mode
+
+dat <- inputting_NA(dat,"TAX CLASS AT PRESENT" ) #Inputting all NAs with mode
+
+dat <- inputting_NA(dat,"RESIDENTIAL UNITS"   ) #Inputting all NAs with mode
+
+dat <- inputting_NA(dat,"COMMERCIAL UNITS" ) #Inputting all NAs with mode
+
+dat <- inputting_NA(dat,"TOTAL UNITS" ) #Inputting all NAs with mode
+
+dat <- inputting_NA(dat,"LAND SQUARE FEET" ) #Inputting all NAs with mode
+
+dat <- inputting_NA(dat,"GROSS SQUARE FEET" ) #Inputting all NAs with mode
+
+dat <- inputting_NA(dat,"YEAR BUILT") #Inputting all NAs with mode
+
+```
+
+```{r}
+# Imputting all 0 with the mode of year in corresponding zipcode area
+for (i in 1:nrow(dat)){
+  if (dat$`YEAR BUILT`[i]==0)
+  {
+    z <- dat$`ZIP CODE`[i]
+    df <- dat[get('ZIP CODE')==z]
+    df <- df[get('YEAR BUILT')!=0]
+    dat$`YEAR BUILT`[i]= Mode(df$`YEAR BUILT`)
+  }
+}
+
+dat <- inputting_NA(dat,"YEAR BUILT") # Imputting the remaining NAs
+
+dat$`YEAR BUILT` <- 2018 - dat$`YEAR BUILT` #Use 2018 as a baseline to calculate how many years the building has been constructed
+```
+
+```{r}
+dat$NEIGHBORHOOD <- as.factor(dat$NEIGHBORHOOD)
+dat$`BUILDING CLASS CATEGORY` <- as.factor(dat$`BUILDING CLASS CATEGORY`)
+dat$`TAX CLASS AT PRESENT` <- as.factor(dat$`TAX CLASS AT PRESENT`)
+dat$`BUILDING CLASS AT PRESENT` <- as.factor(dat$`BUILDING CLASS AT PRESENT`)
+dat$`ZIP CODE` <- as.factor(dat$`ZIP CODE`)
+dat$`BUILDING CLASS AT TIME OF SALE` <- as.factor(dat$`BUILDING CLASS AT TIME OF SALE`)
+```
+
+```{r}
+caps <- quantile(dat$`SALE PRICE`, probs=c(.05, .95), na.rm = T)
+
+dat$`SALE PRICE`=dat$`SALE PRICE`[-which(dat$`SALE PRICE` < (caps[1])) ]
+dat$`SALE PRICE`=dat$`SALE PRICE`[-which(dat$`SALE PRICE` > (caps[2])) ]
+```
+
+
+
+```{r}
+qqnorm(dat$`SALE PRICE`, pch = 1, frame = FALSE) #check qqplot
+qqline(dat$`SALE PRICE`, col = "steelblue", lwd = 2) # Right-skew
+```
+
+```{r}
+dat$`SALE PRICE`=log(dat$`SALE PRICE`)
+qqnorm(dat$`SALE PRICE`, pch = 1, frame = FALSE) #check qqplot
+qqline(dat$`SALE PRICE`, col = "steelblue", lwd = 2) 
+```
+
+```{r}
+trainIndex = sample(1:nrow(dat), size = round(0.7*nrow(dat)), replace=FALSE)
+train = dat[trainIndex ,]
+test = dat[-trainIndex ,]
+```
+
